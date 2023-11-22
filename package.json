@@ -1,0 +1,17 @@
+{
+  "name": "data-quality-rule-runner",
+  "version": "0.0.0",
+  "description": "Run declarative quality rules with row samples and actionable failures.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edilec/data-quality-rule-runner"
+  }
+}
