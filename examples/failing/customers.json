@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1",
+  "dataset": "customers",
+  "rows": [
+    { "id": "cust-001", "tier": "standard", "signed_on": "2025-11-04" },
+    { "id": "cust-002", "tier": "standard", "signed_on": "2026-01-19" }
+  ]
+}

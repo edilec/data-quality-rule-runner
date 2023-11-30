@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1",
+  "dataset": "orders",
+  "rows": [
+    { "order_no": "A-1001", "customer_id": "cust-001", "total": 480.5, "ordered_on": "2026-08-03", "shipped_on": "2026-08-05", "status": "shipped" },
+    { "order_no": "A-1002", "customer_id": "cust-002", "total": 0, "ordered_on": "2026-08-04", "shipped_on": "2026-08-04", "status": "shipped" },
+    { "order_no": "A-1003", "customer_id": "cust-003", "total": 10000, "ordered_on": "2026-08-07", "shipped_on": "2026-08-19", "status": "shipped" },
+    { "order_no": "A-1002", "customer_id": "cust-003", "total": 129, "ordered_on": "2026-08-09", "shipped_on": "2026-08-11", "status": "shipped" }
+  ]
+}
