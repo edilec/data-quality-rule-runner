@@ -278,7 +278,13 @@ function referential(rule, dataset, sampler, limits, showValues, datasets) {
     return false
   }
   if (reportMissingColumns(sampler, rule, dataset, rule.columns, 'the')) return false
-  if (reportMissingColumns(sampler, rule, parent, rule.references.columns, 'the referenced')) return false
+  // An empty referenced export has no columns to be missing. Asking about them
+  // first would report a column name as wrong when the real fact is that the
+  // export holds nothing, which is a finding raised on a correct rule.
+  const parentEmpty = parent.rows.length === 0
+  if (!parentEmpty && reportMissingColumns(sampler, rule, parent, rule.references.columns, 'the referenced')) {
+    return false
+  }
 
   const index = new Set()
   let dropped = 0
@@ -305,7 +311,7 @@ function referential(rule, dataset, sampler, limits, showValues, datasets) {
   // value matches nothing. An empty referenced export is the same situation
   // arriving by a different route: there is nothing to have matched, so
   // "matches nothing" would be a statement about an export, not about a value.
-  const indexComplete = dropped === 0 && parent.rows.length > 0
+  const indexComplete = dropped === 0 && !parentEmpty
   if (!indexComplete) {
     sampler.emit(
       'reference-index-incomplete',
