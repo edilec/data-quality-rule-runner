@@ -1,17 +1,53 @@
 {
   "name": "data-quality-rule-runner",
-  "version": "0.0.0",
-  "description": "Run declarative quality rules with row samples and actionable failures.",
+  "version": "0.1.0",
+  "description": "Execute declarative completeness, uniqueness, range, referential and cross-field rules over exported datasets, reporting a rule that could not be executed as incomplete rather than as data that passed.",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test"
+    "lint": "node --check src/cells.mjs && node --check src/dataset.mjs && node --check src/evaluate.mjs && node --check src/index.mjs && node --check src/rules.mjs && node --check src/ruleset.mjs && node --check bin/data-quality-rule-runner.mjs && node --check test/acceptance.test.mjs && node --check test/boundaries.test.mjs && node --check test/catalog.test.mjs && node --check test/cli.test.mjs && node --check test/confinement.test.mjs && node --check test/evidence.test.mjs && node --check test/helpers.mjs && node --check test/kinds.test.mjs && node --check test/ordering.test.mjs && node --check test/parse.test.mjs && node --check test/ruleset.test.mjs && node --check test/sanitise.test.mjs && node --check test/severity.test.mjs",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/**",
+    "example": "node bin/data-quality-rule-runner.mjs --rules examples/clean/quality.rules.json --data examples/clean",
+    "example:failing": "node bin/data-quality-rule-runner.mjs --rules examples/failing/quality.rules.json --data examples/failing > /dev/null 2>&1; test $? -eq 1",
+    "example:undetermined": "node bin/data-quality-rule-runner.mjs --rules examples/undetermined/quality.rules.json --data examples/undetermined > /dev/null 2>&1; test $? -eq 2",
+    "pack:check": "npm pack --dry-run",
+    "check": "npm run lint && npm test && npm run example && npm run example:failing && npm run example:undetermined && npm run pack:check"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/edilec/data-quality-rule-runner"
-  }
+    "url": "git+https://github.com/edilec/data-quality-rule-runner.git"
+  },
+  "bin": {
+    "data-quality-rule-runner": "./bin/data-quality-rule-runner.mjs"
+  },
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "examples",
+    "docs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "data-quality",
+    "validation",
+    "rules",
+    "referential-integrity",
+    "uniqueness",
+    "audit",
+    "cli"
+  ],
+  "author": "Edilec Private Limited",
+  "bugs": {
+    "url": "https://github.com/edilec/data-quality-rule-runner/issues"
+  },
+  "homepage": "https://github.com/edilec/data-quality-rule-runner#readme"
 }
