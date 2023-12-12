@@ -264,7 +264,7 @@ function crossField(rule, dataset, sampler, limits, showValues) {
   return true
 }
 
-function referential(rule, dataset, sampler, limits, showValues, datasets) {
+function referential(rule, dataset, sampler, limits, showValues, datasets, files) {
   const context = { ruleName: rule.id, file: dataset.file }
   const parent = datasets.get(rule.references.dataset)
   if (parent === undefined) {
@@ -411,7 +411,7 @@ export function evaluateRules({ rules, datasets, files, limits, showValues = fal
     try {
       const evaluator = EVALUATORS[rule.kind]
       if (evaluator === undefined) throw new Error(`unsupported rule kind "${sanitize(rule.kind)}"`)
-      if (evaluator(rule, dataset, sampler, limits, showValues, datasets)) checked += 1
+      if (evaluator(rule, dataset, sampler, limits, showValues, datasets, files)) checked += 1
     } catch (error) {
       sampler.emit(
         'rule-execution-failed',
