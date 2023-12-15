@@ -101,12 +101,20 @@ export function cellText(cell, showValues) {
 /**
  * Encode a tuple of usable cells as one key string.
  *
- * The type tag is not decoration. Without it `"7"` and `7` encode identically,
- * so a string foreign key would silently match a numeric primary key and this
- * tool would report a relation as satisfied on the strength of a coercion it
- * invented. `JSON.stringify` over the tagged tuple is injective for scalars,
- * which is what a composite key needs: `["a","b"]` and `["a|b"]` must not
- * collide, and a separator character would let them.
+ * `JSON.stringify` over a tuple of tuples is what makes this injective for
+ * scalars, and injectivity is the whole requirement: `["a","b"]` and `["a|b"]`
+ * must not collide, which a separator character would allow, and `"7"` must not
+ * collide with `7`, or a string foreign key would silently match a numeric
+ * primary key on the strength of a coercion this tool never performed.
+ *
+ * The type tag does NOT do that second job, and an earlier comment here said it
+ * did. `JSON.stringify` already encodes a string quoted, a number bare and a
+ * boolean as a keyword, so removing the tag changes no answer for any scalar --
+ * a mutation sweep reports dropping it as SURVIVING and that is an EQUIVALENT
+ * MUTANT, pinned by a test that asserts the untagged forms differ too. The tag
+ * stays because it makes the encoding self-describing rather than resting on a
+ * property of one serialiser, and it is the thing that would still be true if
+ * the serialiser were ever replaced.
  */
 export function encodeKey(cells) {
   return JSON.stringify(cells.map((cell) => [cell.type, cell.value]))
