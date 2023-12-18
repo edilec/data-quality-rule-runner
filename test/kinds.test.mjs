@@ -48,6 +48,13 @@ test('a composite key does not collide across a separator or across types', () =
   const text = encodeKey([{ type: 'string', value: '7' }])
   const number = encodeKey([{ type: 'number', value: 7 }])
   assert.notEqual(text, number)
+
+  // Which half of the encoding does that? Not the type tag: JSON already writes
+  // a string quoted and a number bare, so the untagged forms differ as well.
+  // Dropping the tag is therefore an equivalent mutant over scalars, and this
+  // assertion is the proof rather than an assurance.
+  assert.notEqual(JSON.stringify([['7']]), JSON.stringify([[7]]))
+  assert.notEqual(JSON.stringify([['true']]), JSON.stringify([[true]]))
 })
 
 test('a relation does not match a string key against a numeric one', async () => {

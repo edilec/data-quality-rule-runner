@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { join } from 'node:path'
 
-import { runRuleset } from '../src/index.mjs'
+import { RULE_IDS, runRuleset } from '../src/index.mjs'
 import { cleanup, dataset, ruleset, workspace, writeJson } from './helpers.mjs'
 
 after(cleanup)
@@ -99,4 +99,60 @@ test('a JSON Pointer escapes a column name containing a slash or a tilde', async
 
   const report = await runRuleset({ rules: rulesPath, data: directory })
   assert.equal(report.findings[0].location.pointer, '/rows/0/a~1b~0c')
+})
+
+test('findings sharing a file and pointer sort by message in code-unit order', async () => {
+  // The message is the last term of the sort key, so it only decides anything
+  // when file, pointer and rule id all match. Two cross-field rules violated on
+  // the same row produce exactly that, and a rule id is the author's own
+  // string, so it can be chosen where the two orders disagree.
+  const collator = new Intl.Collator()
+  assert.equal(collator.compare('rule Z-order', 'rule a-order') > 0, true)
+
+  const directory = await workspace()
+  await writeJson(join(directory, 'orders.json'), dataset('orders', [{ a: 2, b: 1 }]))
+  const rulesPath = join(directory, 'rules.json')
+  const crossField = {
+    kind: 'crossField',
+    dataset: 'orders',
+    left: 'a',
+    right: 'b',
+    comparison: 'lt',
+    type: 'number',
+  }
+  await writeJson(rulesPath, ruleset({
+    datasets: [{ name: 'orders', file: 'orders.json' }],
+    rules: [{ id: 'a-order', ...crossField }, { id: 'Z-order', ...crossField }],
+  }))
+
+  const report = await runRuleset({ rules: rulesPath, data: directory })
+  assert.equal(report.findings.length, 2)
+  assert.deepEqual(
+    report.findings.map((finding) => [finding.location.pointer, finding.ruleId]),
+    [['/rows/0', 'cross-field-violation'], ['/rows/0', 'cross-field-violation']],
+  )
+  assert.deepEqual(
+    report.findings.map((finding) => finding.message.slice(0, 12)),
+    ['rule Z-order', 'rule a-order'],
+  )
+})
+
+test('the rule-id term of the sort key is an equivalent mutant today, and this proves it', () => {
+  // A mutation sweep reports substituting a collator at the `a.ruleId` term as
+  // SURVIVING. That is an equivalent mutant rather than a missing test: over
+  // THIS catalog the two orders are the same permutation, so no input can tell
+  // them apart. It is a property of today's ids and not a guarantee -- this
+  // assertion fails the moment a new rule id breaks it, which is the signal
+  // that the term needs a behavioural pin of its own.
+  const collator = new Intl.Collator()
+  for (const a of RULE_IDS) {
+    for (const b of RULE_IDS) {
+      if (a === b) continue
+      assert.equal(
+        Math.sign(collator.compare(a, b)),
+        a < b ? -1 : 1,
+        `${a} vs ${b} order differently under collation`,
+      )
+    }
+  }
 })

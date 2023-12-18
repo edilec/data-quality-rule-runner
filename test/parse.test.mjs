@@ -83,6 +83,17 @@ test('a message this helper has never seen, but that quotes something, falls bac
   assert.equal(detail.includes('SECRETVALUE'), false)
 })
 
+test('a quoted snippet that survives a branch is caught by the closing guard', () => {
+  // The generic fallback inside `describeParseFailure` is NOT what makes this
+  // safe: a wording that reaches the offset branch keeps everything before the
+  // offset, snippet included. Only the closing check sees that.
+  const detail = parseFailureDetail({
+    message: 'Bad value "NOTAREALTOKEN0000EXAMPLE" in JSON at position 5',
+  })
+  assert.equal(detail, 'the document could not be parsed as JSON')
+  assert.equal(detail.includes('NOTAREAL'), false)
+})
+
 test('an error with no message at all is described rather than thrown over', () => {
   assert.equal(parseFailureDetail({}), 'the document could not be parsed as JSON')
   assert.equal(parseFailureDetail(null), 'the document could not be parsed as JSON')
