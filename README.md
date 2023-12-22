@@ -136,6 +136,20 @@ the wrong export placed at a known path is caught rather than used.
 Cell values must be scalars: a string, a finite number, a boolean, or `null`.
 Anything else is a cell this tool could not read, which is missing evidence.
 
+### A null is not a value, and that will surprise you once
+
+A cell that is absent, `null`, or renders as nothing is **unevaluable** for every
+rule except `completeness`, which exists to find exactly that. So a `referential`
+rule over a nullable foreign key reports `value-unevaluable` for each null row
+and the run comes back `incomplete` — it does **not** treat the null as
+satisfying the relation, and it does not treat it as violating one either.
+
+That is deliberate and it is uniform: this tool has no SQL semantics to appeal
+to, and choosing either answer would be inventing one. If your column is
+genuinely nullable and you want a verdict, the honest shape is two rules — a
+`completeness` rule you expect to fail on those rows, or an export that omits
+them — rather than a flag here that decides on your behalf.
+
 ## Rule kinds
 
 | Kind | Fields | Satisfied when |

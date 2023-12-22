@@ -122,7 +122,7 @@ test('a range rule over a cell that is not there reaches no verdict', async () =
   assert.match(unevaluable[0].message, /could not be compared against the declared bounds \(the value is null\)/u)
 })
 
-test('a cross-field rule over a cell that is not there reaches no verdict', async () => {
+test('a cross-field rule naming a column no row has is abandoned, and a sibling still runs', async () => {
   const directory = await workspace()
   await writeJson(join(directory, 'orders.json'), dataset('orders', [{ a: 1 }]))
   const rulesPath = join(directory, 'rules.json')
