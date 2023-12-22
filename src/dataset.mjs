@@ -75,6 +75,14 @@ export async function readDataset(realRoot, entry, limits) {
   try {
     stats = await stat(realPath)
   } catch (error) {
+    // NOT COVERED BY A TEST, and named rather than claimed. `realpath` has just
+    // succeeded on this path, so reaching here means the file went away or
+    // became unreadable between the two calls -- a race this suite cannot
+    // construct without an injectable filesystem, which would be a surface
+    // change made for a test rather than for a caller. A mutation sweep reports
+    // removing this arm as SURVIVING and that is a missing test, not an
+    // equivalent mutant: without it `stats` is undefined and the next line
+    // throws, which is a crash rather than a finding.
     return refuse(
       'dataset-unreadable',
       msg`dataset ${entry.name} could not be inspected (${error?.code ?? 'unknown error'}).`,
