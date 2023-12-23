@@ -69,10 +69,11 @@ export const RULE_SEVERITY = Object.freeze({
  * for a reason a reader can check rather than take on trust: every id here is
  * lower-case kebab-case, and over THIS set code-unit order and ICU collation
  * are the same permutation, so substituting a collator produces an identical
- * array. `byCodeUnit` stays because the next rule id added here may not have
- * that property. The ordering that IS observable -- the order findings are
- * emitted in -- is pinned behaviourally in the test suite, on inputs where the
- * two orders genuinely disagree.
+ * array. That property is asserted over every pair of ids in the test suite, so
+ * the next id that breaks it fails a test instead of drifting, and `byCodeUnit`
+ * stays because that id may well be added. The ordering that IS observable --
+ * the order findings are emitted in -- is pinned behaviourally, on inputs where
+ * the two orders genuinely disagree.
  */
 export const RULE_IDS = Object.freeze(Object.keys(RULE_SEVERITY).sort(byCodeUnit))
 
