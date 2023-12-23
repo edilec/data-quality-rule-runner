@@ -35,11 +35,11 @@ async function runWith(root, file) {
 
 test('a symbolic link inside the root that leaves it is refused, not read', async () => {
   const outside = await workspace()
-  const secret = join(outside, 'elsewhere.json')
-  await writeJson(secret, dataset('orders', [{ a: 'OUT-OF-ROOT-CONTENT' }]))
+  const planted = join(outside, 'elsewhere.json')
+  await writeJson(planted, dataset('orders', [{ a: 'OUT-OF-ROOT-CONTENT' }]))
 
   const root = await workspace()
-  await symlink(secret, join(root, 'orders.json'))
+  await symlink(planted, join(root, 'orders.json'))
 
   const report = await runWith(root, 'orders.json')
   assert.equal(report.status, 'incomplete')
