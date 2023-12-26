@@ -132,6 +132,33 @@ function daysInMonth(year, month) {
 }
 
 /**
+ * Whole days from 1970-01-01 to a proleptic Gregorian civil date.
+ *
+ * `Date.UTC` is NOT used, and the reason is the same class of silent roll this
+ * tool refuses `Date.parse` for: `Date.UTC` applies the legacy two-digit-year
+ * rule of the language specification (ECMA-262, MakeFullYear), so a year in
+ * 0000-0099 is remapped into 1900-1999. `Date.UTC(99, 0, 1)` is 1999, not 99.
+ * A sentinel date such as `0001-01-01` and a genuinely old date are both legal
+ * `YYYY-MM-DD` documents, and a rule comparing one of them against a modern
+ * date produced a violation on data that satisfied it -- and, worse, reported
+ * `0050-01-01` and `1950-01-01` as equal.
+ *
+ * This is Hinnant's days_from_civil: exact integer arithmetic over the 400-year
+ * Gregorian cycle, with March as the first month of the internal year so the
+ * leap day lands at its end. It agrees with `Date.UTC` for every year this tool
+ * can parse from 0100 onwards, which the test suite asserts over the whole
+ * range rather than at a few points.
+ */
+function daysFromCivil(year, month, day) {
+  const shifted = month <= 2 ? year - 1 : year
+  const era = Math.floor(shifted / 400)
+  const yearOfEra = shifted - era * 400
+  const dayOfYear = Math.floor((153 * (month + (month > 2 ? -3 : 9)) + 2) / 5) + day - 1
+  const dayOfEra = yearOfEra * 365 + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100) + dayOfYear
+  return era * 146097 + dayOfEra - 719468
+}
+
+/**
  * Parse an instant strictly, as UTC.
  *
  * `Date.parse` is not used anywhere in this tool. It accepts implementation
@@ -139,7 +166,8 @@ function daysInMonth(year, month) {
  * as local time, and silently rolls `2026-02-30` forward into March. A rule
  * that compared two dates would then depend on the host's zone. Only the two
  * shapes below are accepted and every component is range checked, so an invalid
- * date is unevaluable rather than quietly moved.
+ * date is unevaluable rather than quietly moved -- and the epoch arithmetic
+ * below moves nothing either, which `Date.UTC` does for a year under 100.
  */
 export function parseInstant(text) {
   if (typeof text !== 'string') return { ok: false }
@@ -153,7 +181,9 @@ export function parseInstant(text) {
   // 24:00:00 and a leap second are both refused: neither is a point this tool
   // can order against another without inventing what the exporter meant.
   if (hour > 23 || minute > 59 || second > 59) return { ok: false }
-  return { ok: true, ms: Date.UTC(year, month - 1, day, hour, minute, second, milli) }
+  const ms = daysFromCivil(year, month, day) * 86400000
+    + hour * 3600000 + minute * 60000 + second * 1000 + milli
+  return { ok: true, ms }
 }
 
 /**

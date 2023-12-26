@@ -115,6 +115,61 @@ test('a date comparison is strict UTC, and never Date.parse', () => {
   assert.equal(parseInstant('2026-01-01T00:00:00.500Z').ms, Date.UTC(2026, 0, 1, 0, 0, 0, 500))
 })
 
+test('a date is accepted on the inside of every component bound, not only refused past it', () => {
+  // The test above drives the N+1 side of each bound: month 13, hour 24, second
+  // 60. These are the N sides, and they are the sides a user notices. Widening
+  // any one comparison by a character -- `month > 12` to `month >= 12` -- makes
+  // every December date, or every instant in the last hour, minute or second of
+  // a day, unevaluable: exit 2 on data that is legal by this tool's own
+  // documentation.
+  assert.equal(parseInstant('2026-12-25').ms, Date.UTC(2026, 11, 25), 'December')
+  assert.equal(parseInstant('2026-01-01T23:00:00Z').ms, Date.UTC(2026, 0, 1, 23), 'hour 23')
+  assert.equal(parseInstant('2026-01-01T12:59:00Z').ms, Date.UTC(2026, 0, 1, 12, 59), 'minute 59')
+  assert.equal(parseInstant('2026-01-01T12:00:59Z').ms, Date.UTC(2026, 0, 1, 12, 0, 59), 'second 59')
+  assert.equal(parseInstant('2026-01-31T23:59:59.999Z').ms, Date.UTC(2026, 0, 31, 23, 59, 59, 999))
+  assert.equal(parseInstant('2026-01-01').ms, Date.UTC(2026, 0, 1), 'month 1, day 1, the low bounds')
+})
+
+test('a year under 100 is the year the document wrote, and never the 1900s', () => {
+  // `Date.UTC(99, 0, 1)` is 1999-01-01. The language remaps years 0000-0099
+  // into 1900-1999 (ECMA-262, MakeFullYear), which is the same class of silent
+  // roll this tool refuses `Date.parse` for. Reading `0099-01-01` that way made
+  // this tool report a cross-field violation on a row that SATISFIED the rule,
+  // and report two different dates as equal.
+  assert.equal(parseInstant('0099-01-01').ms < parseInstant('1950-01-01').ms, true)
+  assert.notEqual(parseInstant('0050-01-01').ms, parseInstant('1950-01-01').ms)
+  assert.equal(parseInstant('0001-01-01').ms, -62135596800000)
+  assert.equal(parseInstant('0000-02-29').ok, true, 'year 0 is a leap year in the proleptic calendar')
+  assert.equal(parseInstant('0100-02-29').ok, false, 'a century that is not a multiple of 400')
+
+  // From 0100 on, the arithmetic has to agree with `Date.UTC` exactly -- over
+  // the whole range the two shapes can express, not at three sample points.
+  let disagreements = 0
+  for (let year = 100; year <= 9999; year += 1) {
+    for (const [month, day] of [[1, 1], [2, 28], [3, 1], [12, 31]]) {
+      const text = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      const parsed = parseInstant(text)
+      if (!parsed.ok || parsed.ms !== Date.UTC(year, month - 1, day)) disagreements += 1
+    }
+  }
+  assert.equal(disagreements, 0)
+})
+
+test('a crossField date rule stays silent on a row whose year is under 100', async () => {
+  const base = { id: 'r', kind: 'crossField', dataset: 'orders', left: 'a', right: 'b', type: 'date' }
+  // 0099-01-01 IS before 1950-01-01. Through `Date.UTC` both sides became 1950
+  // and this row -- correct data -- produced an error-severity finding and exit 1.
+  const correct = await check([{ a: '0099-01-01', b: '1950-01-01' }], { ...base, comparison: 'lt' })
+  assert.deepEqual(correct.findings, [])
+  assert.equal(correct.status, 'pass')
+
+  // The mirror case: the same remap made two different dates compare equal, so
+  // an `eq` rule over them emitted nothing at all.
+  const different = await check([{ a: '0050-01-01', b: '1950-01-01' }], { ...base, comparison: 'eq' })
+  assert.deepEqual(ruleIds(different), ['cross-field-violation'])
+  assert.equal(different.status, 'fail')
+})
+
 test('a date column holding an unparsable date reaches no verdict', async () => {
   const rule = {
     id: 'r',
