@@ -219,5 +219,21 @@ export const COMPARISONS = Object.freeze({
   neq: (left, right) => left !== right,
 })
 
+/**
+ * The comparison table as a Map, because a property lookup is not a table
+ * lookup: `COMPARISONS['constructor']` resolves `Object.prototype.constructor`,
+ * which is callable and returns a truthy object, so a crossField rule naming it
+ * reported every row as satisfying the comparison. `Object.hasOwn` is not the
+ * guard either -- it coerces its key through ToPropertyKey, so a document whose
+ * `comparison` is `{"toString": {}}` made it throw a raw TypeError before the
+ * sanitiser that was meant to describe the value could run.
+ */
+const COMPARISON_BY_NAME = new Map(Object.entries(COMPARISONS))
+
+/** The comparison of that name, or `undefined`. Never a prototype member. */
+export function comparisonFor(name) {
+  return COMPARISON_BY_NAME.get(name)
+}
+
 export const COMPARISON_NAMES = Object.freeze(Object.keys(COMPARISONS).sort())
 export const DECLARED_TYPES = Object.freeze(['date', 'number', 'string'])

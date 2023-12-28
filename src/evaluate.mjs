@@ -24,7 +24,7 @@
  * the comparison is the part the dropped rows could have changed.
  */
 
-import { COMPARISONS, PRESENT_BUT_UNREADABLE, cellText, compareValue, encodeKey, readCell } from './cells.mjs'
+import { PRESENT_BUT_UNREADABLE, cellText, compareValue, comparisonFor, encodeKey, readCell } from './cells.mjs'
 import { at, makeFinding, msg, pointerToken, sanitize } from './rules.mjs'
 
 function rowPointer(index, column) {
@@ -222,7 +222,12 @@ function range(rule, dataset, sampler, limits, showValues) {
 function crossField(rule, dataset, sampler, limits, showValues) {
   const context = { ruleName: rule.id, file: dataset.file }
   if (reportMissingColumns(sampler, rule, dataset, [rule.left, rule.right], 'the')) return false
-  const compare = COMPARISONS[rule.comparison]
+  const compare = comparisonFor(rule.comparison)
+  // The validator refuses an unsupported comparison, so this is reachable only
+  // through the exported library entry point. It throws rather than defaulting,
+  // and `evaluateRules` turns the throw into `rule-execution-failed`: a
+  // comparison this tool cannot make is never a row that satisfied one.
+  if (compare === undefined) throw new Error(`unsupported comparison "${sanitize(rule.comparison)}"`)
   for (const [index, row] of dataset.rows.entries()) {
     const left = readCell(row, rule.left, limits.maxFieldLength)
     const right = readCell(row, rule.right, limits.maxFieldLength)
@@ -370,6 +375,18 @@ const EVALUATORS = Object.freeze({
 })
 
 /**
+ * The evaluator table as a Map, because a property lookup is not a table
+ * lookup. `EVALUATORS['constructor']` and `EVALUATORS['toString']` resolve
+ * members of `Object.prototype`: both are callable, both return something
+ * truthy, so the `undefined` check below did not fire, `checked` was
+ * incremented and the run reported `pass` -- a rule kind this tool cannot
+ * evaluate counted as a rule it evaluated successfully, which is the one thing
+ * the backstop below exists to prevent. A Map answers for its own entries and
+ * nothing else.
+ */
+const EVALUATOR_BY_KIND = new Map(Object.entries(EVALUATORS))
+
+/**
  * Run every rule, and count only the ones that reached a verdict.
  *
  * `checked` is the number of rules that examined at least one row without being
@@ -409,7 +426,7 @@ export function evaluateRules({ rules, datasets, files, limits, showValues = fal
       continue
     }
     try {
-      const evaluator = EVALUATORS[rule.kind]
+      const evaluator = EVALUATOR_BY_KIND.get(rule.kind)
       if (evaluator === undefined) throw new Error(`unsupported rule kind "${sanitize(rule.kind)}"`)
       if (evaluator(rule, dataset, sampler, limits, showValues, datasets, files)) checked += 1
     } catch (error) {

@@ -143,6 +143,34 @@ test('an unsupported comparison, type or kind is refused by name', () => {
   assert.throws(() => validateRuleset(document([{ ...GOOD.completeness, kind: 'histogram' }])), /supported kinds are/u)
 })
 
+test('a comparison that is hostile rather than merely wrong is still a RulesetError', () => {
+  // Two holes in one line. `Object.hasOwn(COMPARISONS, entry.comparison)`
+  // coerces its key through ToPropertyKey, so a document whose "comparison" is
+  // {"toString": {}} threw a raw TypeError -- out of a function whose whole
+  // contract is to throw RulesetError -- before the sanitize() on the next line
+  // could describe the value. And COMPARISONS was an object literal, so it
+  // answered for Object.prototype's members: whether "constructor" was refused
+  // here was the only thing standing between the CLI and an evaluator that
+  // called Object as a comparison.
+  assert.throws(
+    () => validateRuleset(document([{ ...GOOD.crossField, comparison: { toString: {} } }])),
+    (error) => error instanceof RulesetError
+      && /"rules\[0\]"\.comparison is "\[object\]"/u.test(error.message),
+  )
+  for (const name of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) {
+    assert.throws(
+      () => validateRuleset(document([{ ...GOOD.crossField, comparison: name }])),
+      (error) => error instanceof RulesetError && /supported comparisons are/u.test(error.message),
+      name,
+    )
+  }
+  // The positive side, so this is not satisfied by a validator that refuses
+  // every comparison: each supported name still validates.
+  for (const name of ['eq', 'neq', 'lt', 'lte', 'gt', 'gte']) {
+    assert.equal(validateRuleset(document([{ ...GOOD.crossField, comparison: name }])).rules[0].comparison, name)
+  }
+})
+
 test('an empty datasets or rules array is refused', () => {
   assert.throws(() => validateRuleset({ schemaVersion: '1', datasets: [], rules: [] }), /"datasets" must be a non-empty array/u)
   assert.throws(() => validateRuleset(document([])), /"rules" must be a non-empty array/u)

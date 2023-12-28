@@ -12,7 +12,7 @@
  */
 
 import { MAX_ID_LENGTH, isRenderableString, sanitize } from './rules.mjs'
-import { COMPARISON_NAMES, COMPARISONS, DECLARED_TYPES } from './cells.mjs'
+import { COMPARISON_NAMES, DECLARED_TYPES, comparisonFor } from './cells.mjs'
 
 export class RulesetError extends Error {
   constructor(message) {
@@ -259,7 +259,11 @@ function validateRule(entry, index, datasetNames) {
   } else {
     rule.left = requireName(entry.left, `${where}.left`)
     rule.right = requireName(entry.right, `${where}.right`)
-    if (!Object.hasOwn(COMPARISONS, entry.comparison)) {
+    // `Object.hasOwn` was the wrong test twice over: it coerces its key through
+    // ToPropertyKey, so `{"toString": {}}` here threw a raw TypeError out of a
+    // function whose contract is to throw RulesetError, before the sanitiser on
+    // the next line could describe the value at all.
+    if (comparisonFor(entry.comparison) === undefined) {
       throw new RulesetError(
         `${where}.comparison is "${sanitize(entry.comparison, MAX_ID_LENGTH)}"; `
         + `supported comparisons are ${COMPARISON_NAMES.join(', ')}.`,

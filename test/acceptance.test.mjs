@@ -14,7 +14,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { join } from 'node:path'
 
-import { runRuleset } from '../src/index.mjs'
+import { runRuleset, statusFor } from '../src/index.mjs'
 import { cleanup, dataset, findingsFor, ruleIds, ruleset, workspace, writeJson } from './helpers.mjs'
 
 after(cleanup)
@@ -306,4 +306,50 @@ test('a rule kind no evaluator handles becomes an execution error rather than si
   assert.deepEqual(ruleIds({ findings: result.findings }), ['rule-execution-failed'])
   assert.match(result.findings[0].message, /unsupported rule kind "histogram"/u)
   assert.match(result.findings[0].message, /no verdict was reached/u)
+})
+
+test('a rule kind that names a prototype member is an execution error too', async () => {
+  // `histogram` above is the one class of name that does NOT reach through an
+  // object literal. `EVALUATORS['constructor']` resolved
+  // `Object.prototype.constructor`, which is callable and returns something
+  // truthy, so `checked` was incremented and the run reported `pass` -- a rule
+  // kind this tool cannot evaluate counted as one it evaluated successfully,
+  // through the very entry point the backstop exists for.
+  const { evaluateRules } = await import('../src/evaluate.mjs')
+  const datasets = new Map([['orders', {
+    name: 'orders',
+    file: 'orders.json',
+    rows: ORDERS,
+    columns: new Set(['order_no', 'customer_id', 'total']),
+  }]])
+  const limits = { maxFieldLength: 100, maxSamplesPerRule: 5 }
+
+  for (const kind of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) {
+    const result = evaluateRules({
+      rules: [{ id: 'invented', kind, dataset: 'orders' }],
+      datasets,
+      files: new Map([['orders', 'orders.json']]),
+      limits,
+    })
+    assert.equal(result.checked, 0, kind)
+    assert.deepEqual(ruleIds({ findings: result.findings }), ['rule-execution-failed'], kind)
+    assert.equal(statusFor(result.findings), 'incomplete', kind)
+  }
+
+  // The same hole through the comparison table: `lt` correctly finds 5 is not
+  // less than 1, and `constructor` reported every row as satisfying the rule.
+  const crossField = (comparison) => evaluateRules({
+    rules: [{ id: 'x', kind: 'crossField', dataset: 'orders', left: 'total', right: 'total', comparison, type: 'number' }],
+    datasets,
+    files: new Map([['orders', 'orders.json']]),
+    limits,
+  })
+  const real = crossField('neq')
+  assert.equal(real.checked, 1)
+  assert.deepEqual(new Set(ruleIds({ findings: real.findings })), new Set(['cross-field-violation']))
+  const hostile = crossField('constructor')
+  assert.equal(hostile.checked, 0)
+  assert.deepEqual(ruleIds({ findings: hostile.findings }), ['rule-execution-failed'])
+  assert.match(hostile.findings[0].message, /unsupported comparison "constructor"/u)
+  assert.equal(statusFor(hostile.findings), 'incomplete')
 })
