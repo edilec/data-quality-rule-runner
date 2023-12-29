@@ -387,12 +387,21 @@ const EVALUATORS = Object.freeze({
 const EVALUATOR_BY_KIND = new Map(Object.entries(EVALUATORS))
 
 /**
- * Run every rule, and count only the ones that reached a verdict.
+ * Run every rule, and count the ones that were executed.
  *
  * `checked` is the number of rules that examined at least one row without being
- * abandoned. A rule over an empty export examined nothing: reporting it as
- * satisfied would be the vacuous pass this catalog keeps finding, so it is
- * reported as `rule-examined-no-rows` and the run is incomplete.
+ * abandoned. That is NOT the same as the number of rules that reached a
+ * verdict, and the two must not be conflated: a referential rule whose index
+ * came out incomplete is executed, reports every non-match as undetermined, and
+ * establishes nothing about those rows. The CLI summary used to render this
+ * number as "rules with a verdict" and then print "at least one rule did not
+ * reach a verdict" two lines below it, about the same rule. Whether a verdict
+ * was reached is what `status` and the evidence-missing findings say; `checked`
+ * says only that the rule ran.
+ *
+ * A rule over an empty export examined nothing: reporting it as satisfied would
+ * be the vacuous pass this catalog keeps finding, so it is reported as
+ * `rule-examined-no-rows` and the run is incomplete.
  *
  * The catch-all is a backstop, not decoration. It is reachable through this
  * exported entry point -- a library caller can hand it a rule kind the ruleset

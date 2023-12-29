@@ -148,6 +148,43 @@ test('--show-values is off unless it is asked for', async () => {
   assert.match(JSON.parse(shown.stdout).findings[0].message, /a=a-secret-looking-value/u)
 })
 
+test('the human summary does not credit a verdict the same summary says was not reached', async () => {
+  // The number in this line counts rules that RAN. A referential rule whose
+  // index came out empty runs, reports every non-match as undetermined and
+  // establishes nothing -- and the line below it says so. Rendering that count
+  // as "rules with a verdict" put the two sentences two lines apart in one
+  // report, each contradicting the other, which is exactly the shape a reader
+  // cannot act on.
+  const directory = await workspace()
+  await writeJson(join(directory, 'customers.json'), dataset('customers', []))
+  await writeJson(join(directory, 'orders.json'), dataset('orders', [{ customer_id: 'cust-001' }]))
+  const rulesPath = join(directory, 'rules.json')
+  await writeJson(rulesPath, ruleset({
+    datasets: [{ name: 'orders', file: 'orders.json' }, { name: 'customers', file: 'customers.json' }],
+    rules: [{
+      id: 'known-customer',
+      kind: 'referential',
+      dataset: 'orders',
+      columns: ['customer_id'],
+      references: { dataset: 'customers', columns: ['id'] },
+    }],
+  }))
+
+  const result = await run(['--rules', rulesPath, '--data', directory])
+  assert.equal(result.code, 2)
+  // What the run established, pinned positively: one rule ran, it reached no
+  // verdict, and the summary says both of those things in the same words.
+  assert.match(result.stderr, /rules declared 1, rules executed 1\n/u)
+  assert.match(result.stderr, /incomplete: at least one rule did not reach a verdict\. This is not a pass\.\n/u)
+  assert.equal(/rules with a verdict/u.test(result.stderr), false)
+  assert.equal(JSON.parse(await jsonOf(rulesPath, directory)).summary.checked, 1)
+})
+
+async function jsonOf(rulesPath, directory) {
+  const result = await run(['--rules', rulesPath, '--data', directory, '--json'])
+  return result.stdout
+}
+
 test('the bin path is executable as a module entry point', () => {
   assert.equal(BIN.endsWith('/bin/data-quality-rule-runner.mjs'), true)
 })

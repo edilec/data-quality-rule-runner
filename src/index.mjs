@@ -227,7 +227,7 @@ export function formatSummary(report) {
   const { summary } = report
   const lines = [
     `${TOOL_ID}: ${report.status}`,
-    `  rules declared ${summary.rules}, rules with a verdict ${summary.checked}`,
+    `  rules declared ${summary.rules}, rules executed ${summary.checked}`,
     `  datasets read ${summary.datasetsRead} of ${summary.datasetsDeclared}, rows examined ${summary.rowsExamined}`,
     `  findings ${report.findings.length} (errors ${summary.errors}, warnings ${summary.warnings})`,
   ]
