@@ -16,13 +16,24 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { join } from 'node:path'
 
-import { renderReport, runRuleset } from '../src/index.mjs'
+import { formatSummary, renderReport, runRuleset } from '../src/index.mjs'
 import { cleanup, dataset, ruleset, workspace, writeJson } from './helpers.mjs'
 
 after(cleanup)
 
-/** Everything that could tell this process what time it is, made to throw. */
-function withNoClock(body) {
+/**
+ * Everything that could tell this process what time it is, made to throw --
+ * for as long as the body runs, INCLUDING after it awaits.
+ *
+ * This helper was synchronous, and the run it guards is not. `finally` fired
+ * the moment the body RETURNED ITS PROMISE, so `globalThis.Date` was restored
+ * before the first await inside readRuleset resumed and everything after that
+ * point ran against the real clock. Injecting `Date.now()` as the first
+ * statement of `evaluateRules` -- the core of every run -- left the whole suite
+ * green. Awaiting the body is the whole fix, and the self-check below drives an
+ * async body so the hole cannot come back unnoticed.
+ */
+async function withNoClock(body) {
   const RealDate = globalThis.Date
   globalThis.Date = new Proxy(RealDate, {
     construct(target, args, newTarget) {
@@ -39,18 +50,37 @@ function withNoClock(body) {
     },
   })
   try {
-    return body()
+    return await body()
   } finally {
     globalThis.Date = RealDate
   }
 }
 
-test('the guard itself catches a clock read, so the test below is not vacuous', () => {
-  assert.throws(() => withNoClock(() => Date.now()), /a clock was read: Date\.now/u)
-  assert.throws(() => withNoClock(() => new Date()), /a clock was read: new Date/u)
-  assert.throws(() => withNoClock(() => Date.parse('2026-09-18')), /a clock was read: Date\.parse/u)
-  // Arithmetic over supplied numbers is untouched.
-  assert.equal(withNoClock(() => Date.UTC(2026, 8, 18)), Date.UTC(2026, 8, 18))
+test('the guard itself catches a clock read, so the test below is not vacuous', async () => {
+  for (const read of [() => Date.now(), () => new Date(), () => Date.parse('2026-09-18')]) {
+    await assert.rejects(withNoClock(read), /a clock was read/u)
+    // The case the synchronous version of this helper could not see: a body
+    // that reads the clock only AFTER it has awaited something, which is every
+    // read inside an async run. The guard has to still be in place there.
+    await assert.rejects(
+      withNoClock(async () => {
+        await Promise.resolve()
+        return read()
+      }),
+      /a clock was read/u,
+    )
+  }
+  // Arithmetic over supplied numbers is untouched, before and after an await.
+  assert.equal(await withNoClock(() => Date.UTC(2026, 8, 18)), Date.UTC(2026, 8, 18))
+  assert.equal(
+    await withNoClock(async () => {
+      await Promise.resolve()
+      return Date.UTC(2026, 8, 18)
+    }),
+    Date.UTC(2026, 8, 18),
+  )
+  // And the real Date is back afterwards, whichever way the body ended.
+  assert.equal(typeof Date.now(), 'number')
 })
 
 test('a full run completes with every clock read made to throw', async () => {
@@ -71,13 +101,21 @@ test('a full run completes with every clock read made to throw', async () => {
     ],
   }))
 
-  const normal = renderReport(await runRuleset({ rules: rulesPath, data: directory }))
-  const guarded = await withNoClock(() => runRuleset({ rules: rulesPath, data: directory }))
+  const report = await runRuleset({ rules: rulesPath, data: directory })
+  const normal = { json: renderReport(report), human: formatSummary(report) }
 
-  assert.equal(renderReport(guarded), normal)
-  assert.equal(guarded.status, 'fail')
+  // Rendering is inside the guard too. A clock read on the way OUT of a run is
+  // still a clock read, and it would put a wall-clock value in front of a user.
+  const guarded = await withNoClock(async () => {
+    const produced = await runRuleset({ rules: rulesPath, data: directory })
+    return { report: produced, json: renderReport(produced), human: formatSummary(produced) }
+  })
+
+  assert.equal(guarded.json, normal.json)
+  assert.equal(guarded.human, normal.human)
+  assert.equal(guarded.report.status, 'fail')
   assert.deepEqual(
-    guarded.findings.map((finding) => finding.ruleId).sort(),
+    guarded.report.findings.map((finding) => finding.ruleId).sort(),
     ['cross-field-violation', 'referential-violation'],
   )
 })
