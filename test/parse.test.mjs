@@ -48,11 +48,31 @@ test('a long document with a sensitive prefix loses the prefix, not just the tai
   assert.equal(detail.includes('password'), false)
 })
 
-test('a quoted span reported from the middle of the document says so, and shows none of it', () => {
+test('a short document quoted whole is reported as quoted from its start', () => {
+  // V8 quotes a short document ENTIRELY, with no leading ellipsis, whatever the
+  // offset of the offence inside it -- so this is the "at the start" branch,
+  // not the middle-of-document one. This test was named for the middle case and
+  // then asserted the start wording, which left the branch it claimed to cover
+  // with no test at all in this suite; the test below is that branch.
   const { message, detail } = failureFor('{"alpha":ZQXJVBMP7W}')
-  assert.equal(message.includes('ZQXJVBMP7W'), true)
+  assert.equal(message, `Unexpected token 'Z', "{"alpha":ZQXJVBMP7W}" is not valid JSON`)
   assert.equal(detail, "unexpected token 'Z' at the start of the document")
   assert.equal(detail.includes('ZQXJVBMP7W'), false)
+})
+
+test('a quoted span reported from the middle of the document says so, and shows none of it', () => {
+  // Long enough that V8 takes its window from around the offence instead of
+  // from the start, which it marks with a leading ellipsis. That ellipsis is
+  // the only thing that distinguishes the two wordings, and the document body
+  // must not survive into either.
+  const document = `{"alpha": "${'x'.repeat(200)}", "beta": ZQXJVBMP7W}`
+  const { message, detail } = failureFor(document)
+  assert.equal(message.startsWith(`Unexpected token 'Z', ..."`), true, message)
+  assert.equal(message.includes('ZQXJVBMP7W'), true)
+  assert.equal(detail, "unexpected token 'Z' inside the document")
+  assert.equal(detail.includes('ZQXJVBMP7W'), false)
+  assert.equal(detail.includes('xxx'), false)
+  assert.equal(detail.includes('"'), false)
 })
 
 test('a quoted span containing a newline is still recognised as a quoted span', () => {
