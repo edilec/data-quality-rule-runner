@@ -12,6 +12,14 @@
  * bound checked after the read has already spent the memory it was there to
  * protect. A tool in this catalog died of heap exhaustion at a size its own
  * documentation called legal.
+ *
+ * Per-dataset bytes are not the whole of the work. Every dataset a ruleset
+ * declares is held in memory at once -- a referential rule needs two of them
+ * simultaneously and a rule may name any of them -- so the cost of a run is the
+ * SUM, and a per-file bound leaves that sum to be worked out by multiplying two
+ * numbers from different rows of the limits table. `limits.maxTotalDatasetBytes`
+ * makes it a declared bound instead, taken from the same `stat` and spent
+ * before the file is opened.
  */
 
 import { readFile, realpath, stat } from 'node:fs/promises'
@@ -44,7 +52,7 @@ function insideRoot(realRoot, realPath) {
  * Returns `{ ok: true, rows, columns }`, or `{ ok: false, findings }` with at
  * least one finding naming exactly what was not established.
  */
-export async function readDataset(realRoot, entry, limits) {
+export async function readDataset(realRoot, entry, limits, budget) {
   const file = entry.file
   const refuse = (ruleId, message, extra) => ({
     ok: false,
@@ -99,6 +107,21 @@ export async function readDataset(realRoot, entry, limits) {
       { suggestion: 'Split the export, or raise limits.maxDatasetBytes up to its ceiling.' },
     )
   }
+  // Spent before the open, in the order the ruleset declares its datasets, so
+  // which datasets are read is a property of the document rather than of the
+  // filesystem. A dataset that does not fit is reported and not opened; it is
+  // never truncated and never counted as a dataset whose rules passed.
+  if (stats.size > budget.remaining) {
+    return refuse(
+      'datasets-too-large-together',
+      msg`dataset ${entry.name} is ${String(stats.size)} bytes and only
+          ${String(budget.remaining)} of the limits.maxTotalDatasetBytes budget
+          (${String(budget.total)}) is left, so it was not opened. Every declared dataset is held
+          in memory at once, so the bound is on their total.`,
+      { suggestion: 'Split the run across rulesets, or raise limits.maxTotalDatasetBytes up to its ceiling.' },
+    )
+  }
+  budget.remaining -= stats.size
 
   let bytes
   try {

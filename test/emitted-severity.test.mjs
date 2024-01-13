@@ -105,6 +105,18 @@ const SCENARIOS = [
       rules: [{ id: 'r', kind: 'completeness', dataset: 'orders', column: 'a' }],
     })
   }],
+  ['datasets-too-large-together', async (root) => {
+    // Each file is under limits.maxDatasetBytes; together they are over the
+    // total. The second one is the one refused, because the budget is spent in
+    // the order the ruleset declares its datasets.
+    await writeJson(join(root, 'orders.json'), dataset('orders', [{ customer_id: 'cust-1' }]))
+    await writeJson(join(root, 'customers.json'), dataset('customers', [{ id: 'cust-1' }]))
+    return ruleset({
+      datasets: BOTH,
+      limits: { maxTotalDatasetBytes: 100 },
+      rules: [RELATION],
+    })
+  }],
   ['dataset-too-many-rows', async (root) => {
     await writeJson(join(root, 'orders.json'), dataset('orders', [{ a: 1 }, { a: 2 }]))
     return ruleset({

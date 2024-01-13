@@ -75,6 +75,48 @@ test('limits.maxDatasetBytes: silent at exactly the file size, fires one byte be
   assert.equal(ruleIds(over).includes('dataset-too-large'), true)
 })
 
+test('limits.maxTotalDatasetBytes: silent at exactly the sum, fires one byte below it', async () => {
+  // Two files, each comfortably under limits.maxDatasetBytes. What this bound
+  // governs is their SUM, because every declared dataset is held in memory at
+  // once, so both sides have to be driven with two datasets rather than one.
+  const directory = await workspace()
+  await writeJson(join(directory, 'orders.json'), dataset('orders', [{ customer_id: 'cust-1' }]))
+  await writeJson(join(directory, 'customers.json'), dataset('customers', [{ id: 'cust-1' }]))
+  const sizes = await Promise.all(
+    ['orders.json', 'customers.json'].map(async (name) => (await stat(join(directory, name))).size),
+  )
+  const total = sizes[0] + sizes[1]
+  const rulesPath = join(directory, 'rules.json')
+  const write = (maxTotalDatasetBytes) => writeJson(rulesPath, ruleset({
+    datasets: [{ name: 'orders', file: 'orders.json' }, { name: 'customers', file: 'customers.json' }],
+    rules: [{
+      id: 'known',
+      kind: 'referential',
+      dataset: 'orders',
+      columns: ['customer_id'],
+      references: { dataset: 'customers', columns: ['id'] },
+    }],
+    limits: { maxTotalDatasetBytes },
+  }))
+
+  await write(total)
+  const atLimit = await runRuleset({ rules: rulesPath, data: directory })
+  assert.deepEqual(atLimit.findings, [])
+  assert.equal(atLimit.status, 'pass')
+  assert.equal(atLimit.summary.datasetsRead, 2)
+
+  await write(total - 1)
+  const over = await runRuleset({ rules: rulesPath, data: directory })
+  assert.equal(over.status, 'incomplete')
+  assert.equal(ruleIds(over).includes('datasets-too-large-together'), true)
+  // The first dataset still fits and is still read: the budget is spent in the
+  // order the ruleset declares its datasets, and only what does not fit is
+  // refused. The rule over the refused dataset reaches no verdict.
+  assert.equal(over.summary.datasetsRead, 1)
+  assert.equal(ruleIds(over).includes('rule-execution-failed'), true)
+  assert.equal(over.summary.checked, 0)
+})
+
 test('limits.maxRows: silent at exactly the row count, fires one row below it', async () => {
   const rows = [{ a: '1' }, { a: '2' }, { a: '3' }]
 

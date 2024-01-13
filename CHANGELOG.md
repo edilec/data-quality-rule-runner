@@ -24,6 +24,12 @@ breaking change and is recorded here.
 - Path confinement against the resolved real path, so a symbolic link inside
   `--data` that leads out of it is refused rather than read.
 - Bounds on ruleset bytes, rules, datasets, key columns, identifier length,
-  dataset bytes, rows, columns, field length and reported samples, each enforced
-  before the work it bounds and each tested from both sides.
+  dataset bytes, total dataset bytes, rows, columns, field length and reported
+  samples, each enforced before the work it bounds and each tested from both
+  sides.
+- `limits.maxTotalDatasetBytes` and `datasets-too-large-together`: every
+  declared dataset is held in memory at once, so the cost of a run is their sum
+  rather than the largest of them. The ceiling is the product of the two bounds
+  that already governed that sum, so nothing legal without it is illegal with
+  it, and a ruleset may lower it to cap what a run will cost.
 - Cell values masked by default in findings, with `--show-values` to print them.

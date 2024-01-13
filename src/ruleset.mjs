@@ -36,6 +36,7 @@ export const MAX_KEY_COLUMNS = 8
 /** Bounds a ruleset may lower. It may never raise one past its ceiling. */
 export const LIMIT_CEILINGS = Object.freeze({
   maxDatasetBytes: 16777216,
+  maxTotalDatasetBytes: 536870912,
   maxRows: 200000,
   maxColumns: 512,
   maxFieldLength: 8192,
@@ -44,6 +45,7 @@ export const LIMIT_CEILINGS = Object.freeze({
 
 export const DEFAULT_LIMITS = Object.freeze({
   maxDatasetBytes: 4194304,
+  maxTotalDatasetBytes: 536870912,
   maxRows: 50000,
   maxColumns: 128,
   maxFieldLength: 4096,

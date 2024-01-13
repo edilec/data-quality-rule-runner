@@ -159,8 +159,9 @@ export async function runRuleset({ rules: rulesPath, data: dataPath, showValues 
   const files = new Map(ruleset.datasets.map((entry) => [entry.name, entry.file]))
   let rows = 0
 
+  const budget = { total: ruleset.limits.maxTotalDatasetBytes, remaining: ruleset.limits.maxTotalDatasetBytes }
   for (const entry of ruleset.datasets) {
-    const result = await readDataset(realRoot, entry, ruleset.limits)
+    const result = await readDataset(realRoot, entry, ruleset.limits, budget)
     if (!result.ok) {
       findings.push(...result.findings)
       continue

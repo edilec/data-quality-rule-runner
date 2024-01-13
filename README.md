@@ -185,6 +185,7 @@ accepts a string of U+0001 or U+200E that reaches a report as the empty string.
 | `dataset-too-many-rows` | error | yes |
 | `dataset-unparsable` | error | yes |
 | `dataset-unreadable` | error | yes |
+| `datasets-too-large-together` | error | yes |
 | `key-unevaluable` | error | yes |
 | `no-rules-executed` | error | yes |
 | `range-violation` | error | no |
@@ -242,6 +243,7 @@ size is taken from `stat` before the file is opened.
 | columns in one key | 8 | 8 | no |
 | identifier length | 128 | 128 | no |
 | `limits.maxDatasetBytes` | 4194304 | 16777216 | yes |
+| `limits.maxTotalDatasetBytes` | 536870912 | 536870912 | yes |
 | `limits.maxRows` | 50000 | 200000 | yes |
 | `limits.maxColumns` | 128 | 512 | yes |
 | `limits.maxFieldLength` | 4096 | 8192 | yes |
@@ -256,6 +258,30 @@ truncation and never a pass.
 narrow: it bounds how many **locations** are reported for a rule that has
 already reached its verdict. Exceeding it adds a `samples-truncated` finding
 naming the real total.
+
+`limits.maxTotalDatasetBytes` bounds the work rather than one file. Every
+declared dataset is held in memory at once — a referential rule needs two of
+them at the same time, and a rule may name any of them — so the cost of a run is
+the sum of the datasets, not the largest of them. Its ceiling is the product of
+the two bounds that already governed that sum (32 datasets at 16777216 bytes
+each), so no ruleset that is legal without it becomes illegal with it; what it
+adds is a bound a ruleset can **lower** to cap what a run will cost on a machine
+whose limit is smaller than that.
+
+Measured at the documented maximum rather than generalised from a smaller run.
+Two runs of each, `/usr/bin/time -l`, Node 22 on macOS arm64:
+
+| Input at the ceiling | CPU | Wall | Peak RSS | Result |
+| --- | ---: | ---: | ---: | --- |
+| 32 datasets × 16776938 bytes, 5217824 rows, 64 rules | 15.3–15.9 s | 44–100 s | 1.35–1.47 GiB | exit 0, `pass` |
+| 1 dataset, 200000 rows, 256 rules | 28.1–30.3 s | 132–186 s | 496–512 MiB | exit 0, `pass` |
+
+The machine was under other load, so the wall-clock spread is the machine's and
+not the tool's — the CPU figures are the stable ones. **Size a host by the
+resident figures**: the first row is what `limits.maxTotalDatasetBytes` at its
+ceiling costs, and a host whose heap cannot hold that should lower the bound
+rather than discover it as an out-of-memory kill, which would be a dead process
+rather than a report.
 
 ## Verification
 
