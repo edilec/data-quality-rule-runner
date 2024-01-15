@@ -71,10 +71,13 @@ export function readCell(row, column, maxFieldLength) {
     return { usable: true, type: 'string', value }
   }
   if (typeof value === 'number') {
-    // `JSON.parse` never produces NaN or an Infinity from valid JSON, so this
-    // arm is reached only through the library entry points, where a consumer
-    // supplies rows directly. It is kept because "unreachable from the CLI" is
-    // not the same as "unreachable".
+    // `JSON.parse` DOES produce an Infinity from valid JSON: the grammar has no
+    // Infinity literal, but it has exponents, and `1e999` overflows to one --
+    // silently, with no error and no warning. A comment here used to say the
+    // opposite and called this arm library-only, which is how it ended up with
+    // no test. An overflowed reading is present and unreadable, so it is
+    // reported as evidence this run did not get, not as a value out of range
+    // and not as a column that is empty.
     if (!Number.isFinite(value)) return unusable('nonScalar')
     return { usable: true, type: 'number', value }
   }

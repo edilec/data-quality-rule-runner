@@ -8,6 +8,7 @@
 
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { compareValue, encodeKey, parseInstant, readCell, runRuleset } from '../src/index.mjs'
@@ -193,6 +194,54 @@ test('compareValue converts nothing across types', () => {
   assert.deepEqual(compareValue({ usable: true, type: 'number', value: 12 }, 'string'), { ok: false })
   assert.deepEqual(compareValue({ usable: true, type: 'number', value: 12 }, 'number'), { ok: true, value: 12 })
   assert.throws(() => compareValue({ usable: true, type: 'string', value: 'x' }, 'money'), /Unknown declared type/u)
+})
+
+test('a number that overflows to Infinity is unreadable, not out of range', async () => {
+  // JSON has no Infinity literal, so it is easy to believe a parsed document
+  // cannot hold one -- and a comment in this tool said exactly that. It has
+  // exponents: `JSON.parse('{"a":1e999}').a` is Infinity, silently. An
+  // exporter that writes a computed reading can produce one.
+  assert.equal(JSON.parse('{"a":1e999}').a, Number.POSITIVE_INFINITY)
+  assert.equal(JSON.parse('{"a":-1e999}').a, Number.NEGATIVE_INFINITY)
+  assert.equal(readCell(JSON.parse('{"a":1e999}'), 'a', 100).code, 'nonScalar')
+
+  // The document is written as TEXT, because JSON.stringify(Infinity) is
+  // `null`: building this fixture through a serialiser turns the case under
+  // test into a different one.
+  const directory = await workspace()
+  await writeFile(
+    join(directory, 'orders.json'),
+    '{ "schemaVersion": "1", "dataset": "orders", "rows": [{ "reading": 1e999 }] }\n',
+    'utf8',
+  )
+  const rulesPath = join(directory, 'rules.json')
+  const drive = async (rule) => {
+    await writeJson(rulesPath, ruleset({ datasets: [{ name: 'orders', file: 'orders.json' }], rules: [rule] }))
+    return runRuleset({ rules: rulesPath, data: directory })
+  }
+
+  // Neither rule kind that reads a number may call it a violation: an
+  // overflowed value is evidence this run did not get.
+  const range = await drive({ id: 'r', kind: 'range', dataset: 'orders', column: 'reading', min: 0, max: 100 })
+  assert.deepEqual(ruleIds(range), ['value-unevaluable'])
+  assert.equal(range.status, 'incomplete')
+  assert.match(range.findings[0].message, /not a scalar/u)
+
+  const complete = await drive({ id: 'r', kind: 'completeness', dataset: 'orders', column: 'reading' })
+  assert.deepEqual(ruleIds(complete), ['value-unevaluable'])
+  assert.equal(complete.status, 'incomplete')
+  assert.match(complete.findings[0].message, /whether it is populated was not established/u)
+
+  // And a finite number of the same magnitude class is still an ordinary
+  // value, so this is not satisfied by a readCell that refuses large numbers.
+  await writeFile(
+    join(directory, 'orders.json'),
+    '{ "schemaVersion": "1", "dataset": "orders", "rows": [{ "reading": 1e308 }] }\n',
+    'utf8',
+  )
+  const finite = await drive({ id: 'r', kind: 'range', dataset: 'orders', column: 'reading', min: 0, max: 1e308 })
+  assert.deepEqual(finite.findings, [])
+  assert.equal(finite.status, 'pass')
 })
 
 test('readCell separates an absent column from an explicit null', () => {
