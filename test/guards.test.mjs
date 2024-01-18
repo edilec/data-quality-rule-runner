@@ -179,6 +179,72 @@ test('a cross-field rule whose column is absent only on some rows reports each r
   assert.match(unevaluable[0].message, /column b could not be compared \(the column is not present on this row\)/u)
 })
 
+test('every rule kind abandons a rule naming a column the export has not got', async () => {
+  // Only completeness and crossField had this pinned, so a sweep removing the
+  // guard from uniqueness, from range, or from either side of a relation was
+  // SILENT -- and without it the rule does not stop: it runs over rows whose
+  // key cannot be formed, and the run reports what it found instead of
+  // reporting that it was asked about a column that is not there.
+  const directory = await workspace()
+  await writeJson(join(directory, 'orders.json'), dataset('orders', [{ a: 1 }, { a: 1 }]))
+  await writeJson(join(directory, 'customers.json'), dataset('customers', [{ id: 1 }]))
+  const both = [...DATASETS, { name: 'customers', file: 'customers.json' }]
+  const rulesPath = join(directory, 'rules.json')
+  const drive = async (rule) => {
+    await writeJson(rulesPath, ruleset({ datasets: both, rules: [rule] }))
+    return runRuleset({ rules: rulesPath, data: directory })
+  }
+
+  const cases = [
+    ['uniqueness', { id: 'r', kind: 'uniqueness', dataset: 'orders', columns: ['gone'] }, /the dataset orders has no column named gone/u],
+    ['range', { id: 'r', kind: 'range', dataset: 'orders', column: 'gone', min: 0, max: 1 }, /the dataset orders has no column named gone/u],
+    ['referential child', {
+      id: 'r',
+      kind: 'referential',
+      dataset: 'orders',
+      columns: ['gone'],
+      references: { dataset: 'customers', columns: ['id'] },
+    }, /the dataset orders has no column named gone/u],
+    ['referential referenced', {
+      id: 'r',
+      kind: 'referential',
+      dataset: 'orders',
+      columns: ['a'],
+      references: { dataset: 'customers', columns: ['gone'] },
+    }, /the referenced dataset customers has no column named gone/u],
+  ]
+  for (const [label, rule, wording] of cases) {
+    const report = await drive(rule)
+    // Exactly this, and nothing else: no violation, no undetermined reference,
+    // no key-unevaluable per row. The rule was abandoned before the row loop.
+    assert.deepEqual(ruleIds(report).sort(), ['no-rules-executed', 'rule-column-absent'], label)
+    assert.equal(report.summary.checked, 0, label)
+    assert.equal(report.status, 'incomplete', label)
+    assert.match(findingsFor(report, 'rule-column-absent')[0].message, wording, label)
+    assert.match(findingsFor(report, 'rule-column-absent')[0].message, /No row was judged\./u, label)
+  }
+
+  // The positive side: the same four rules over columns the export does have
+  // are silent, so this is not satisfied by an evaluator that abandons
+  // everything.
+  const ok = [
+    { id: 'r', kind: 'uniqueness', dataset: 'customers', columns: ['id'] },
+    { id: 'r', kind: 'range', dataset: 'orders', column: 'a', min: 0, max: 1 },
+    {
+      id: 'r',
+      kind: 'referential',
+      dataset: 'orders',
+      columns: ['a'],
+      references: { dataset: 'customers', columns: ['id'] },
+    },
+  ]
+  for (const rule of ok) {
+    const report = await drive(rule)
+    assert.deepEqual(report.findings, [], rule.kind)
+    assert.equal(report.status, 'pass', rule.kind)
+  }
+})
+
 test('a relation whose referenced dataset was not read names the rule and the dataset', async () => {
   const directory = await workspace()
   await writeJson(join(directory, 'orders.json'), dataset('orders', [{ customer_id: 'cust-001' }]))
