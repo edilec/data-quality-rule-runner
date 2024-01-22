@@ -148,6 +148,37 @@ test('--show-values is off unless it is asked for', async () => {
   assert.match(JSON.parse(shown.stdout).findings[0].message, /a=a-secret-looking-value/u)
 })
 
+test('the human summary prints every finding, with its severity, id, place and message', async () => {
+  // Deleting either of the two lines that render a finding left the suite
+  // green: the whole human half of the output -- the half a person actually
+  // reads, since --json is what a machine takes -- was pinned only by its
+  // three header lines.
+  const { directory, rulesPath } = await project([{ a: 1 }, { a: 1 }], {
+    rules: [{ id: 'unique-a', kind: 'uniqueness', dataset: 'orders', columns: ['a'] }],
+  })
+  const result = await run(['--rules', rulesPath, '--data', directory])
+
+  assert.equal(result.code, 1)
+  const lines = result.stderr.split('\n')
+  assert.equal(lines[0], 'data-quality-rule-runner: fail')
+  assert.equal(lines[1], '  rules declared 1, rules executed 1')
+  assert.equal(lines[2], '  datasets read 1 of 1, rows examined 2')
+  assert.equal(lines[3], '  findings 1 (errors 1, warnings 0)')
+  assert.equal(lines[4], '  error uniqueness-violation orders.json /rows/1')
+  assert.equal(lines[5], '    rule unique-a: composite key (a=<number>) also appears at /rows/0.')
+  // No incomplete line: this run reached its verdict and the verdict was fail.
+  assert.equal(result.stderr.includes('incomplete'), false)
+
+  // stdout carries the same JSON report either way -- a consumer that pipes it
+  // never has to ask for that. What --json changes is the human summary, which
+  // is silenced, so the lines above are the human path and not a duplicate of
+  // the machine one.
+  const json = await run(['--rules', rulesPath, '--data', directory, '--json'])
+  assert.equal(json.stderr, '')
+  assert.equal(json.stdout, result.stdout)
+  assert.equal(JSON.parse(json.stdout).findings.length, 1)
+})
+
 test('the human summary does not credit a verdict the same summary says was not reached', async () => {
   // The number in this line counts rules that RAN. A referential rule whose
   // index came out empty runs, reports every non-match as undetermined and

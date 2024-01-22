@@ -122,6 +122,58 @@ test('a value longer than the evidence limit is cut, and says it was', () => {
   assert.equal(sanitize('y'.repeat(EVIDENCE_LIMIT)), 'y'.repeat(EVIDENCE_LIMIT))
 })
 
+test('every mask hides the value and still says what shape it had', async () => {
+  // Masking is this tool's redaction: a quality report is routinely pasted
+  // into a ticket or a build log, which travel further than the dataset. Only
+  // the string mask was pinned anywhere, so a sweep could rewrite the number,
+  // boolean and unevaluable masks -- the text a reader sees in place of the
+  // value -- with the whole suite green.
+  const { cellText, readCell } = await import('../src/cells.mjs')
+  const cell = (value) => readCell({ a: value }, 'a', 100)
+
+  assert.equal(cellText(cell('hello'), false), '<string:5>')
+  assert.equal(cellText(cell(42), false), '<number>')
+  assert.equal(cellText(cell(true), false), '<boolean>')
+  assert.equal(cellText(cell(false), false), '<boolean>')
+  // A cell this run could not read carries no shape at all, because it has
+  // none this tool established.
+  assert.equal(cellText(cell(null), false), '<unevaluable>')
+  assert.equal(cellText(cell({ deep: 1 }), false), '<unevaluable>')
+  assert.equal(cellText(cell(null), true), '<unevaluable>')
+
+  // And with --show-values the value itself appears, so the masks above are
+  // not the only thing cellText can say.
+  assert.equal(cellText(cell('hello'), true), 'hello')
+  assert.equal(cellText(cell(42), true), '42')
+  assert.equal(cellText(cell(true), true), 'true')
+  // Even then it crosses the sanitisation boundary.
+  const bidi = `north${String.fromCodePoint(0x202e)}`
+  assert.equal(cellText(cell(bidi), true), 'north')
+  assert.equal(cellText(cell(bidi), false), '<string:6>')
+})
+
+test('a finding carries its suggestion and its evidence through the boundary', () => {
+  // Removing either branch of makeFinding left the suite green: no test
+  // asserted that a `suggestion` reaches the report at all, and `evidence` is
+  // part of the finding shape the report contract defines and is reachable
+  // from this exported function even though no call site in this tool passes
+  // one today.
+  const nel = String.fromCodePoint(0x0085)
+  const finding = makeFinding('completeness-violation', msg`something`, { file: 'a.json' }, {
+    suggestion: `Correct the export${nel} upstream.`,
+    evidence: `reading${nel} = 1`,
+  })
+  assert.equal(finding.suggestion, 'Correct the export upstream.')
+  assert.equal(finding.evidence, 'reading = 1')
+  assert.equal(JSON.parse(JSON.stringify(finding)).suggestion, 'Correct the export upstream.')
+
+  // Neither key is invented when the caller supplies neither: an optional
+  // field of the envelope is absent, not empty.
+  const bare = makeFinding('completeness-violation', msg`something`, { file: 'a.json' })
+  assert.equal(Object.hasOwn(bare, 'suggestion'), false)
+  assert.equal(Object.hasOwn(bare, 'evidence'), false)
+})
+
 test('a finding message must be built through the checked template', () => {
   assert.throws(
     () => makeFinding('completeness-violation', 'a plain string', {}),
