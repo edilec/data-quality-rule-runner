@@ -194,6 +194,21 @@ test('compareValue converts nothing across types', () => {
   assert.deepEqual(compareValue({ usable: true, type: 'number', value: 12 }, 'string'), { ok: false })
   assert.deepEqual(compareValue({ usable: true, type: 'number', value: 12 }, 'number'), { ok: true, value: 12 })
   assert.throws(() => compareValue({ usable: true, type: 'string', value: 'x' }, 'money'), /Unknown declared type/u)
+
+  // The date branch. There used to be a type check here as well as inside
+  // parseInstant; removing either one changed no byte, because the other still
+  // answered, so neither could be pinned by a test. The duplicate is gone and
+  // the behaviour is asserted where it lives: on both functions, from the
+  // outside.
+  assert.deepEqual(compareValue({ usable: true, type: 'number', value: 12 }, 'date'), { ok: false })
+  assert.deepEqual(compareValue({ usable: true, type: 'boolean', value: true }, 'date'), { ok: false })
+  assert.deepEqual(
+    compareValue({ usable: true, type: 'string', value: '2026-01-01' }, 'date'),
+    { ok: true, value: Date.UTC(2026, 0, 1) },
+  )
+  for (const value of [12, true, null, undefined, {}, ['2026-01-01']]) {
+    assert.deepEqual(parseInstant(value), { ok: false }, String(value))
+  }
 })
 
 test('a number that overflows to Infinity is unreadable, not out of range', async () => {

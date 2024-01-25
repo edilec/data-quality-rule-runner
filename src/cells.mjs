@@ -206,7 +206,10 @@ export function compareValue(cell, declaredType) {
     return cell.type === 'string' ? { ok: true, value: cell.value } : { ok: false }
   }
   if (declaredType === 'date') {
-    if (cell.type !== 'string') return { ok: false }
+    // No type check here: `parseInstant` refuses anything that is not a string
+    // itself, and a second check in front of it would be a guard no test can
+    // make bite -- removing it changes no byte, which is how a line stops being
+    // read. The behaviour it was there for is pinned on this function directly.
     const instant = parseInstant(cell.value)
     return instant.ok ? { ok: true, value: instant.ms } : { ok: false }
   }
