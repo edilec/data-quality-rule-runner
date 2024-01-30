@@ -246,6 +246,40 @@ export function sanitize(value, limit = EVIDENCE_LIMIT) {
 }
 
 /**
+ * The code points that account for two values rendering alike.
+ *
+ * A report that says a value changed from X to X, or that X has no match in an
+ * export that visibly holds X, cannot be acted on -- and this tool can produce
+ * both, because a comparison uses the raw value while the message shows the
+ * sanitised one. `sanitize` drops every control and format character and
+ * collapses whitespace, so a trailing space and a U+200E are both invisible in
+ * a report and both real in the data.
+ *
+ * The difference is named exactly rather than guessed at: the multiset of
+ * characters in one value and not the other, both ways round. For "kWh" and
+ * "kWh " that is U+0020; for "cust-001" and "cust-001<U+200E>" it is U+200E.
+ * The list is bounded and in code-unit order, and it is empty when the two
+ * values are a permutation of the same characters -- which renders alike
+ * without any one character to blame, so the caller says less rather than
+ * something false.
+ */
+export function differingCodePoints(left, right, limit = 4) {
+  if (typeof left !== 'string' || typeof right !== 'string') return ''
+  const counts = new Map()
+  const tally = (text, step) => {
+    for (const character of text) counts.set(character, (counts.get(character) ?? 0) + step)
+  }
+  tally(left, 1)
+  tally(right, -1)
+  const named = [...counts]
+    .filter(([, count]) => count !== 0)
+    .map(([character]) => `U+${character.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`)
+    .sort(byCodeUnit)
+  if (named.length === 0) return ''
+  return named.length > limit ? `${named.slice(0, limit).join(', ')}, ...` : named.join(', ')
+}
+
+/**
  * Whether a value is a string that still says something once sanitised.
  *
  * `value.trim().length > 0` is the wrong question and has shipped as a bug:

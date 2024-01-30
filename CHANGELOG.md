@@ -33,3 +33,8 @@ breaking change and is recorded here.
   that already governed that sum, so nothing legal without it is illegal with
   it, and a ruleset may lower it to cap what a run will cost.
 - Cell values masked by default in findings, with `--show-values` to print them.
+- A finding that names two values which render identically says which
+  difference it is and names the code points, instead of printing one value
+  twice: the comparison reads the exported value and the message is written
+  from the rendered one, and a trailing space or an invisible format character
+  is real in the first and absent from the second.

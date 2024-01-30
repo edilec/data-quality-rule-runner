@@ -212,6 +212,25 @@ Cell values are **masked by default** — `<string:12>`, `<number>`, `<boolean>`
 because a quality report is routinely pasted into a ticket or a build log, which
 travel further than the data they describe. Pass `--show-values` to print them.
 
+A comparison is made on the **exported** value and a message is written from the
+**rendered** one, and those two can disagree: a trailing space, a `U+0085` or a
+`U+200E` is a real difference in the document and invisible in a report. Where
+that happens the finding says so and names the code points, rather than printing
+one value twice and leaving a reader to look for a difference that is not on the
+screen:
+
+```
+unit_before (kWh) is not gte unit_after (kWh).
+  The two differ only in characters this report does not display (U+0020).
+
+(customer_id=cust-001) has no matching (id) in dataset customers, which does
+  hold a key that renders identically to it. The two differ only in characters
+  this report does not display (U+200E).
+```
+
+The verdict is unchanged in both: the values really are different and the key
+really has no match. What changes is that the sentence can be acted on.
+
 ## Exit codes
 
 | Code | Meaning |

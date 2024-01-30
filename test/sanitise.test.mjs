@@ -15,6 +15,7 @@ import {
   EVIDENCE_LIMIT,
   LINE_SEPARATORS,
   describeValue,
+  differingCodePoints,
   isRenderableString,
   makeFinding,
   msg,
@@ -172,6 +173,112 @@ test('a finding carries its suggestion and its evidence through the boundary', (
   const bare = makeFinding('completeness-violation', msg`something`, { file: 'a.json' })
   assert.equal(Object.hasOwn(bare, 'suggestion'), false)
   assert.equal(Object.hasOwn(bare, 'evidence'), false)
+})
+
+test('differingCodePoints names the characters that account for two values rendering alike', () => {
+  const lrm = String.fromCodePoint(0x200e)
+  const rlm = String.fromCodePoint(0x200f)
+  assert.equal(differingCodePoints('kWh', `kWh `), 'U+0020')
+  assert.equal(differingCodePoints(`cust-001${lrm}`, 'cust-001'), 'U+200E')
+  assert.equal(differingCodePoints(`a${lrm}b`, `a${rlm}b`), 'U+200E, U+200F')
+  // A permutation renders alike with no one character to blame, so nothing is
+  // named rather than something false.
+  assert.equal(differingCodePoints('ab ', ' ab'), '')
+  assert.equal(differingCodePoints(5, 'x'), '')
+  // Bounded, and in code-unit order.
+  assert.equal(differingCodePoints('abcdefg', ''), 'U+0061, U+0062, U+0063, U+0064, ...')
+})
+
+test('a report never says two values differ and then prints them identically', async () => {
+  // The emblem of this catalog: "column reading changed unit from kWh to kWh",
+  // at error severity, because the comparison read the raw value and the
+  // message was written from the sanitised one. The difference is REAL and
+  // still deserves the finding -- what it needs is to say which difference it
+  // is, because a reader cannot act on a sentence that contradicts itself.
+  const lrm = String.fromCodePoint(0x200e)
+  const nel = String.fromCodePoint(0x0085)
+  const directory = await workspace()
+  const rulesPath = join(directory, 'rules.json')
+
+  await writeJson(join(directory, 'orders.json'), dataset('orders', [
+    { unit_before: 'kWh', unit_after: 'kWh ' },
+  ]))
+  await writeJson(rulesPath, ruleset({
+    datasets: [{ name: 'orders', file: 'orders.json' }],
+    rules: [{ id: 'unit-stable', kind: 'crossField', dataset: 'orders', left: 'unit_before', right: 'unit_after', comparison: 'gte', type: 'string' }],
+  }))
+  const cross = await runRuleset({ rules: rulesPath, data: directory, showValues: true })
+  assert.equal(cross.status, 'fail')
+  assert.deepEqual(cross.findings.map((finding) => finding.ruleId), ['cross-field-violation'])
+  assert.equal(cross.findings[0].message.includes('(kWh) is not gte unit_after (kWh)'), true)
+  assert.match(cross.findings[0].message, /differ only in characters this report does not display \(U\+0020\)/u)
+
+  // Two strings that genuinely differ must NOT gain the clause: a note that
+  // fires on every string comparison would be the false positive this whole
+  // class is about, arriving from the other side.
+  // 'M' is 0x4D and 'k' is 0x6B, so 'MWh' is below 'kWh' by code unit and gte
+  // genuinely fails here.
+  await writeJson(join(directory, 'orders.json'), dataset('orders', [
+    { unit_before: 'MWh', unit_after: 'kWh' },
+  ]))
+  const plain = await runRuleset({ rules: rulesPath, data: directory, showValues: true })
+  assert.deepEqual(plain.findings.map((finding) => finding.ruleId), ['cross-field-violation'])
+  assert.equal(plain.findings[0].message.includes('does not display'), false)
+  assert.match(plain.findings[0].suggestion, /Correct one of the two columns upstream/u)
+
+  // And a row that satisfies the rule stays silent.
+  await writeJson(join(directory, 'orders.json'), dataset('orders', [
+    { unit_before: 'kWh', unit_after: 'MWh' },
+  ]))
+  const silent = await runRuleset({ rules: rulesPath, data: directory, showValues: true })
+  assert.deepEqual(silent.findings, [])
+  assert.equal(silent.status, 'pass')
+
+  // A relation, in all three directions the collision can arrive from. The
+  // verdict does not change -- the key really has no match -- but the report
+  // now says the referenced export holds one that looks the same.
+  const relation = [{
+    id: 'known-customer',
+    kind: 'referential',
+    dataset: 'orders',
+    columns: ['customer_id'],
+    references: { dataset: 'customers', columns: ['id'] },
+  }]
+  const drive = async (child, parent) => {
+    await writeJson(join(directory, 'orders.json'), dataset('orders', [{ customer_id: child }]))
+    await writeJson(join(directory, 'customers.json'), dataset('customers', [{ id: parent }]))
+    await writeJson(rulesPath, ruleset({
+      datasets: [{ name: 'orders', file: 'orders.json' }, { name: 'customers', file: 'customers.json' }],
+      rules: relation,
+    }))
+    return runRuleset({ rules: rulesPath, data: directory, showValues: true })
+  }
+
+  for (const [label, child, parent, codes] of [
+    ['the child carries it', `cust-001${lrm}`, 'cust-001', /U\+200E/u],
+    ['the referenced key carries it', 'cust-001', `cust-001${nel}`, /U\+0085/u],
+    ['both carry one', `cust-001${lrm}`, `cust-001${nel}`, /U\+0085, U\+200E/u],
+  ]) {
+    const report = await drive(child, parent)
+    assert.equal(report.status, 'fail', label)
+    assert.deepEqual(report.findings.map((finding) => finding.ruleId), ['referential-violation'], label)
+    assert.match(report.findings[0].message, /does hold a key that renders identically to it/u, label)
+    assert.match(report.findings[0].message, codes, label)
+    assert.match(report.findings[0].suggestion, /invisible characters/u, label)
+  }
+
+  // The negative side, and it is the important one: an ordinary dangling key
+  // must NOT gain the clause, and a key that matches must stay silent. A note
+  // that fires on everything would be the false positive this whole class is
+  // about.
+  const dangling = await drive('cust-009', 'cust-001')
+  assert.deepEqual(dangling.findings.map((finding) => finding.ruleId), ['referential-violation'])
+  assert.equal(dangling.findings[0].message.includes('renders identically'), false)
+  assert.match(dangling.findings[0].suggestion, /Add the referenced row/u)
+
+  const matching = await drive('cust-001', 'cust-001')
+  assert.deepEqual(matching.findings, [])
+  assert.equal(matching.status, 'pass')
 })
 
 test('a finding message must be built through the checked template', () => {

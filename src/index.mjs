@@ -79,6 +79,7 @@ export {
   byCodeUnit,
   compareFindings,
   describeValue,
+  differingCodePoints,
   findForbiddenClaim,
   isRenderableString,
   makeFinding,

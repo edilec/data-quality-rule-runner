@@ -25,7 +25,7 @@
  */
 
 import { PRESENT_BUT_UNREADABLE, cellText, compareValue, comparisonFor, encodeKey, readCell } from './cells.mjs'
-import { at, makeFinding, msg, pointerToken, sanitize } from './rules.mjs'
+import { at, differingCodePoints, makeFinding, msg, pointerToken, sanitize } from './rules.mjs'
 
 function rowPointer(index, column) {
   return column === undefined ? `/rows/${index}` : `/rows/${index}/${pointerToken(column)}`
@@ -98,6 +98,42 @@ function reportMissingColumns(sampler, rule, dataset, columns, side) {
     { suggestion: 'Align the column name with the export, or drop the rule.' },
   )
   return true
+}
+
+/** A key's cells as this report would show them, for collision detection only. */
+function renderCells(cells) {
+  return cells.map((cell) => (cell.type === 'string' ? { type: cell.type, value: sanitize(cell.value) } : cell))
+}
+
+/** The raw text of a key's cells, for naming the characters that differ. */
+function joinValues(cells) {
+  return cells.map((cell) => String(cell.value)).join('\u0000')
+}
+
+/**
+ * Whether two cells hold different values that this report shows identically.
+ *
+ * The comparison is made on the raw value and the message is written from the
+ * sanitised one, and the gap between those two is a defect factory: a report
+ * that says "kWh changed to kWh", or that a key has no match in an export that
+ * visibly contains it, sends a reader to look for a difference that is not on
+ * the screen. Only strings can collide -- two different numbers or booleans
+ * never sanitise to the same text -- so a masked `<number>` beside another
+ * masked `<number>` is not this, and is not reported as it.
+ */
+function rendersAlike(left, right) {
+  return left.usable && right.usable
+    && left.type === 'string' && right.type === 'string'
+    && left.value !== right.value
+    && sanitize(left.value) === sanitize(right.value)
+}
+
+/** The clause that names an invisible difference, or nothing at all. */
+function invisibleClause(left, right) {
+  const codes = differingCodePoints(left, right)
+  return codes === ''
+    ? 'The two differ only in characters this report does not display.'
+    : `The two differ only in characters this report does not display (${codes}).`
 }
 
 function keyText(columns, cells, showValues) {
@@ -257,6 +293,21 @@ function crossField(rule, dataset, sampler, limits, showValues) {
       continue
     }
     if (compare(leftValue.value, rightValue.value)) continue
+    if (rendersAlike(left, right)) {
+      // A real violation, reported so a reader can act on it. Without this the
+      // sentence reads "a (north) is not gte b (north)", which is the shape
+      // that makes somebody stop trusting a checker.
+      sampler.sample(
+        context,
+        'cross-field-violation',
+        msg`rule ${rule.id}: ${rule.left} (${cellText(left, showValues)}) is not ${rule.comparison}
+            ${rule.right} (${cellText(right, showValues)}).
+            ${invisibleClause(left.value, right.value)}`,
+        at(dataset.file, rowPointer(index)),
+        { suggestion: 'Correct the invisible characters in one of the two columns upstream.' },
+      )
+      continue
+    }
     sampler.sample(
       context,
       'cross-field-violation',
@@ -292,6 +343,12 @@ function referential(rule, dataset, sampler, limits, showValues, datasets, files
   }
 
   const index = new Set()
+  // Parent keys whose RENDERED form differs from their raw form, keyed by that
+  // rendered form. A clean export puts nothing in here, so this costs no memory
+  // on the runs that do not need it, and it is what lets a non-match say which
+  // difference it is rather than leaving a reader staring at a key the
+  // referenced export visibly contains.
+  const renderedIndex = new Map()
   let dropped = 0
   for (const [parentIndex, row] of parent.rows.entries()) {
     const cells = rule.references.columns.map((column) => readCell(row, column, limits.maxFieldLength))
@@ -308,7 +365,10 @@ function referential(rule, dataset, sampler, limits, showValues, datasets, files
       )
       continue
     }
-    index.add(encodeKey(cells))
+    const key = encodeKey(cells)
+    index.add(key)
+    const rendered = encodeKey(renderCells(cells))
+    if (rendered !== key) renderedIndex.set(rendered, joinValues(cells))
   }
 
   // Evidence dropped while building an index makes the comparison INCOMPLETE.
@@ -341,16 +401,44 @@ function referential(rule, dataset, sampler, limits, showValues, datasets, files
       )
       continue
     }
-    if (index.has(encodeKey(cells))) continue
+    const childKey = encodeKey(cells)
+    if (index.has(childKey)) continue
+    // The referenced export may hold a key that a reader cannot tell apart from
+    // this one: same text on the screen, different bytes in the document. That
+    // is a real difference and it still has no match, so the verdict does not
+    // change -- but the message has to say WHICH difference it is.
+    const childRendered = encodeKey(renderCells(cells))
+    // Two ways to collide, and the second is easy to get wrong: when the
+    // REFERENCED key is the clean one, the key it holds is this child's own
+    // rendered form, so that is what the difference has to be named against --
+    // naming it against the child itself compares a value with itself and finds
+    // nothing to report.
+    const alike = childRendered !== childKey && index.has(childRendered)
+      ? joinValues(renderCells(cells))
+      : renderedIndex.get(childRendered)
     if (!indexComplete) {
       sampler.sample(
         context,
         'reference-undetermined',
         msg`rule ${rule.id}: (${keyText(rule.columns, cells, showValues)}) matches no key in the
             partial index of ${parent.name}. Whether it matches a key that index is missing was
-            not established.`,
+            not established.${alike === undefined ? '' : ` A key of ${parent.name} renders
+            identically to it. ${invisibleClause(joinValues(cells), alike)}`}`,
         at(dataset.file, rowPointer(childIndex)),
         { suggestion: 'Complete the referenced export, then run again for a verdict.' },
+      )
+      continue
+    }
+    if (alike !== undefined) {
+      sampler.sample(
+        context,
+        'referential-violation',
+        msg`rule ${rule.id}: (${keyText(rule.columns, cells, showValues)}) has no matching
+            (${rule.references.columns.map((c) => sanitize(c)).join(', ')}) in dataset
+            ${parent.name}, which does hold a key that renders identically to it.
+            ${invisibleClause(joinValues(cells), alike)}`,
+        at(dataset.file, rowPointer(childIndex)),
+        { suggestion: 'Correct the invisible characters on one side, rather than adding a row.' },
       )
       continue
     }
