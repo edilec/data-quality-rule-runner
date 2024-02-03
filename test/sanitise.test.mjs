@@ -187,6 +187,13 @@ test('differingCodePoints names the characters that account for two values rende
   assert.equal(differingCodePoints(5, 'x'), '')
   // Bounded, and in code-unit order.
   assert.equal(differingCodePoints('abcdefg', ''), 'U+0061, U+0062, U+0063, U+0064, ...')
+  // Both sides of that bound: exactly the limit is named in full, one more is
+  // cut. Widening the comparison by a character would start cutting a list the
+  // limit calls complete.
+  assert.equal(differingCodePoints('abcd', ''), 'U+0061, U+0062, U+0063, U+0064')
+  assert.equal(differingCodePoints('abcde', ''), 'U+0061, U+0062, U+0063, U+0064, ...')
+  assert.equal(differingCodePoints('abc', '', 3), 'U+0061, U+0062, U+0063')
+  assert.equal(differingCodePoints('abcd', '', 3), 'U+0061, U+0062, U+0063, ...')
 })
 
 test('a report never says two values differ and then prints them identically', async () => {
@@ -266,6 +273,38 @@ test('a report never says two values differ and then prints them identically', a
     assert.match(report.findings[0].message, codes, label)
     assert.match(report.findings[0].suggestion, /invisible characters/u, label)
   }
+
+  // The same collision when the index is INCOMPLETE. The run cannot say the
+  // key has no match at all, so the verdict stays undetermined -- and it still
+  // has to say that a key which renders identically is in the part of the
+  // index it does have.
+  await writeJson(join(directory, 'orders.json'), dataset('orders', [{ customer_id: 'cust-001' }]))
+  await writeJson(join(directory, 'customers.json'), dataset('customers', [
+    { id: `cust-001${nel}` },
+    { id: null },
+  ]))
+  await writeJson(rulesPath, ruleset({
+    datasets: [{ name: 'orders', file: 'orders.json' }, { name: 'customers', file: 'customers.json' }],
+    rules: relation,
+  }))
+  const partial = await runRuleset({ rules: rulesPath, data: directory, showValues: true })
+  assert.equal(partial.status, 'incomplete')
+  assert.equal(partial.findings.some((finding) => finding.ruleId === 'reference-undetermined'), true)
+  const undetermined = partial.findings.find((finding) => finding.ruleId === 'reference-undetermined')
+  assert.match(undetermined.message, /does hold a key that renders identically to it/u)
+  assert.match(undetermined.message, /U\+0085/u)
+  assert.match(undetermined.message, /not established/u)
+
+  // And an incomplete index with an ordinary non-match must NOT claim a key
+  // renders identically, which would be a positive statement about an index
+  // this run knows is missing rows.
+  await writeJson(join(directory, 'orders.json'), dataset('orders', [{ customer_id: 'cust-009' }]))
+  const partialPlain = await runRuleset({ rules: rulesPath, data: directory, showValues: true })
+  assert.equal(partialPlain.status, 'incomplete')
+  const plainUndetermined = partialPlain.findings.find((finding) => finding.ruleId === 'reference-undetermined')
+  assert.equal(plainUndetermined.message.includes('renders identically'), false)
+  assert.match(plainUndetermined.message, /matches no key in the partial index of customers/u)
+  assert.match(plainUndetermined.suggestion, /Complete the referenced export/u)
 
   // The negative side, and it is the important one: an ordinary dangling key
   // must NOT gain the clause, and a key that matches must stay silent. A note

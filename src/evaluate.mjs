@@ -416,14 +416,26 @@ function referential(rule, dataset, sampler, limits, showValues, datasets, files
     const alike = childRendered !== childKey && index.has(childRendered)
       ? joinValues(renderCells(cells))
       : renderedIndex.get(childRendered)
+    if (!indexComplete && alike !== undefined) {
+      sampler.sample(
+        context,
+        'reference-undetermined',
+        msg`rule ${rule.id}: (${keyText(rule.columns, cells, showValues)}) matches no key in the
+            partial index of ${parent.name}, which does hold a key that renders identically to it.
+            ${invisibleClause(joinValues(cells), alike)} Whether it also matches a key that index
+            is missing was not established.`,
+        at(dataset.file, rowPointer(childIndex)),
+        { suggestion: 'Correct the invisible characters, and complete the referenced export.' },
+      )
+      continue
+    }
     if (!indexComplete) {
       sampler.sample(
         context,
         'reference-undetermined',
         msg`rule ${rule.id}: (${keyText(rule.columns, cells, showValues)}) matches no key in the
             partial index of ${parent.name}. Whether it matches a key that index is missing was
-            not established.${alike === undefined ? '' : ` A key of ${parent.name} renders
-            identically to it. ${invisibleClause(joinValues(cells), alike)}`}`,
+            not established.`,
         at(dataset.file, rowPointer(childIndex)),
         { suggestion: 'Complete the referenced export, then run again for a verdict.' },
       )
