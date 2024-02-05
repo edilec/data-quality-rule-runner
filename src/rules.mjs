@@ -267,15 +267,18 @@ export function differingCodePoints(left, right, limit = 4) {
   if (typeof left !== 'string' || typeof right !== 'string') return ''
   const counts = new Map()
   const tally = (text, step) => {
-    for (const character of text) counts.set(character, (counts.get(character) ?? 0) + step)
+    for (const character of text) {
+      counts.set(character.codePointAt(0), (counts.get(character.codePointAt(0)) ?? 0) + step)
+    }
   }
   tally(left, 1)
   tally(right, -1)
-  const named = [...counts]
-    .filter(([, count]) => count !== 0)
-    .map(([character]) => `U+${character.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`)
-    .sort(byCodeUnit)
-  if (named.length === 0) return ''
+  // Sorted as NUMBERS. Sorting the rendered `U+XXXX` names would put the order
+  // of this list behind a string comparison, and a string comparison is the one
+  // thing in this file that has to be argued about rather than read.
+  const points = [...counts].filter(([, count]) => count !== 0).map(([point]) => point)
+  points.sort((a, b) => a - b)
+  const named = points.map((point) => `U+${point.toString(16).toUpperCase().padStart(4, '0')}`)
   return named.length > limit ? `${named.slice(0, limit).join(', ')}, ...` : named.join(', ')
 }
 

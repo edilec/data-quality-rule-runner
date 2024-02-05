@@ -194,6 +194,10 @@ test('differingCodePoints names the characters that account for two values rende
   assert.equal(differingCodePoints('abcde', ''), 'U+0061, U+0062, U+0063, U+0064, ...')
   assert.equal(differingCodePoints('abc', '', 3), 'U+0061, U+0062, U+0063')
   assert.equal(differingCodePoints('abcd', '', 3), 'U+0061, U+0062, U+0063, ...')
+  // Ordered by code point, not by the rendered name: U+005A sorts before
+  // U+1F600 as a number, and after it as a string of unequal length.
+  assert.equal(differingCodePoints(`Z${String.fromCodePoint(0x1f600)}`, ''), 'U+005A, U+1F600')
+  assert.equal(differingCodePoints(`${String.fromCodePoint(0x1f600)}Z`, ''), 'U+005A, U+1F600')
 })
 
 test('a report never says two values differ and then prints them identically', async () => {
