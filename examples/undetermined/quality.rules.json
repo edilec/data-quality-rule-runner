@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1",
+  "limits": { "maxRows": 10000, "maxSamplesPerRule": 5 },
+  "datasets": [
+    { "name": "customers", "file": "customers.json" },
+    { "name": "orders", "file": "orders.json" }
+  ],
+  "rules": [
+    { "id": "orders-customer-populated", "kind": "completeness", "dataset": "orders", "column": "customer_id" },
+    { "id": "orders-key-unique", "kind": "uniqueness", "dataset": "orders", "columns": ["customer_id", "order_no"] },
+    { "id": "orders-total-in-range", "kind": "range", "dataset": "orders", "column": "total", "min": 0, "max": 10000 },
+    { "id": "orders-customer-known", "kind": "referential", "dataset": "orders", "columns": ["customer_id"], "references": { "dataset": "customers", "columns": ["id"] } },
+    { "id": "orders-shipped-after-ordered", "kind": "crossField", "dataset": "orders", "left": "ordered_on", "right": "shipped_on", "comparison": "lte", "type": "date" }
+  ]
+}
