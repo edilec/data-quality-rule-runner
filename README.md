@@ -43,6 +43,14 @@ building an index makes the comparison incomplete; it does not make it clean.
   one. A comparison this tool cannot make is reported as one it did not make.
 - It **is not a profiler**. It answers the rules you declare and invents none.
 
+## Operational context
+
+This CLI checks known rules against a local JSON export. Edilec's [guide to
+data observability and data quality testing](https://edilec.com/blog/datana-11006/data-observability-vs-data-quality-testing/)
+explains how deterministic tests and runtime monitoring serve different parts
+of a data-quality workflow. The CLI does not monitor a running pipeline or
+detect unexpected shifts on its own.
+
 ## Quick start
 
 ```sh
